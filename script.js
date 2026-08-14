@@ -218,6 +218,7 @@ function showGrades() {
     }
     showView('grade');
 }
+
 // ==========================================
 // ⚡ TAB SWITCHING FOR CHAPTERS & MENTAL MATH
 // ==========================================
@@ -227,18 +228,21 @@ function switchTopicTab(tabName) {
     const chaptersContent = document.getElementById('tab-chapters-content');
     const mentalContent = document.getElementById('tab-mental-content');
 
-    if (tabName === 'chapters') {
-        chaptersBtn.className = "bg-blue-600 text-white font-bold text-xl py-3 px-6 rounded-xl shadow-md transition-all";
-        mentalBtn.className = "bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xl py-3 px-6 rounded-xl transition-all";
-        chaptersContent.classList.remove('hidden');
-        mentalContent.classList.add('hidden');
-    } else {
-        mentalBtn.className = "bg-purple-600 text-white font-bold text-xl py-3 px-6 rounded-xl shadow-md transition-all";
-        chaptersBtn.className = "bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xl py-3 px-6 rounded-xl transition-all";
-        chaptersContent.classList.add('hidden');
-        mentalContent.classList.remove('hidden');
+    if (chaptersBtn && mentalBtn && chaptersContent && mentalContent) {
+        if (tabName === 'chapters') {
+            chaptersBtn.className = "bg-blue-600 text-white font-bold text-xl py-3 px-6 rounded-xl shadow-md transition-all";
+            mentalBtn.className = "bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xl py-3 px-6 rounded-xl transition-all";
+            chaptersContent.classList.remove('hidden');
+            mentalContent.classList.add('hidden');
+        } else {
+            mentalBtn.className = "bg-purple-600 text-white font-bold text-xl py-3 px-6 rounded-xl shadow-md transition-all";
+            chaptersBtn.className = "bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold text-xl py-3 px-6 rounded-xl transition-all";
+            chaptersContent.classList.add('hidden');
+            mentalContent.classList.remove('hidden');
+        }
     }
 }
+
 function showTopics(selectedGrade) {
     document.getElementById('nav-back-grades').classList.remove('hidden');
     document.getElementById('nav-back-topics').classList.add('hidden');
@@ -346,6 +350,10 @@ function updateTimerDisplay() {
     if (timerEl) timerEl.innerText = `⏱️ ${formatTime(secondsElapsed)}`;
 }
 
+function startMentalMath() {
+    startMentalMathForGrade(currentGrade || 1);
+}
+
 function startMentalMathForGrade(grade) {
     // 1. Look for questions assigned to this grade with Chapter/Topic named "Mental Math"
     let mmQuestions = allQuestions.filter(q => {
@@ -368,6 +376,7 @@ function startMentalMathForGrade(grade) {
     currentPendingQuestions = mmQuestions;
     startPractice(mmQuestions);
 }
+
 // ============================================================
 // 🎯 PRACTICE INITIATION
 // ============================================================
@@ -465,19 +474,50 @@ function loadQuestion() {
     }
 }
 
+// ============================================================
+// 🧹 ANSWER NORMALIZATION & EVALUATION
+// ============================================================
+
+// Helper to normalize strings for comparison (strips spaces, commas, casing)
+function normalizeAnswer(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .toLowerCase()
+        .replace(/,/g, '')      // Removes commas: "45,890" -> "45890"
+        .replace(/\s+/g, '')     // Removes all spaces: "5 cm" -> "5cm", "45, 46" -> "4546"
+        .trim();
+}
+
+// Checks if student answer matches DB answer (supports space/comma tolerance & multiple OR answers)
+function isAnswerCorrect(userAns, correctAns, qType) {
+    if (qType === 'FIB') {
+        const normalizedUser = normalizeAnswer(userAns);
+        
+        // Allows multiple acceptable answers in DB split by '|' or '/' (e.g. "5 cm | 0.05 m")
+        const acceptableAnswers = String(correctAns).split(/\||\//);
+        
+        return acceptableAnswers.some(ans => normalizeAnswer(ans) === normalizedUser);
+    }
+    
+    // For MCQ & True/False, use standard trimmed lowercase comparison
+    return String(userAns || '').trim().toLowerCase() === String(correctAns || '').trim().toLowerCase();
+}
+
 function checkAnswer(selectedBtn, selectedText, correctText, explanation, qType) {
     // 🛑 STOP: Ignore click if this question has already been answered
     if (userAnswers[currentQuestionIndex] !== undefined) return;
-    const sel = String(selectedText || '').trim().toLowerCase();
-    const cor = String(correctText || '').trim().toLowerCase();
-    const isCorrect = sel === cor;
+
+    // ✨ NEW: Smart matching for spaces, commas, and formatting
+    const isCorrect = isAnswerCorrect(selectedText, correctText, qType);
 
     // 1. Lock Options based on Question Type
     if (qType === 'MCQ' || qType === 'TF') {
         document.querySelectorAll('.option-btn').forEach(btn => {
             btn.onclick = null; // Remove click handlers
             btn.classList.add('opacity-70');
-            if (btn.innerText.trim().toLowerCase() === cor) {
+            
+            // Highlight the correct option in green
+            if (String(btn.innerText).trim().toLowerCase() === String(correctText).trim().toLowerCase()) {
                 btn.classList.remove('opacity-70', 'bg-slate-50', 'border-slate-200');
                 btn.classList.add('bg-green-100', 'border-green-500', 'text-green-900');
             }
@@ -493,10 +533,10 @@ function checkAnswer(selectedBtn, selectedText, correctText, explanation, qType)
         }
     }
 
-    // 2. Save the answer state (Crucial for the guard clause in Step 1!)
+    // 2. Save the answer state
     userAnswers[currentQuestionIndex] = isCorrect;
 
-   // GAMIFICATION LOGIC
+    // 3. GAMIFICATION LOGIC
     if (isCorrect) {
         currentStreak++;
         const xpEarned = 10 + (currentStreak * 2); // Bonus XP for streaks
@@ -506,7 +546,6 @@ function checkAnswer(selectedBtn, selectedText, correctText, explanation, qType)
         currentStreak = 0; // Reset streak on mistake
     }
 
-    userAnswers[currentQuestionIndex] = isCorrect;
     score = Object.values(userAnswers).filter(isAns => isAns === true).length;
     updateScoreDisplay();
 
